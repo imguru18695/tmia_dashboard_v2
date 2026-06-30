@@ -1858,7 +1858,12 @@ async function renderHoldings() {
     // Fetch live holdings from backend
     try {
         const fund = currentFund === 'longhorn' ? 'longhorn' : 'endowment';
-        const res  = await fetch(`/api/portfolio/${fund}`, { headers: _applyAuthHeader() });
+        const sel  = document.getElementById('h-date');
+        const selectedDate = sel?.value;  // "YYYY-MM-DD" or empty
+        const url  = selectedDate
+            ? `/api/snapshot?fund=${fund}&date=${selectedDate}`
+            : `/api/portfolio/${fund}`;
+        const res  = await fetch(url, { headers: _applyAuthHeader() });
         if (res.ok) {
             const json = await res.json();
             // Map API fields → frontend field names used by applyFilters/row renderer
