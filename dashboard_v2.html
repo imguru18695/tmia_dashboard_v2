@@ -1586,19 +1586,43 @@ function applyLiveBench(fund, data) {
 }
 
 // ── DASHBOARD RENDERERS ──────────────────────────────────────────
-function renderDashboard() {
+async function renderDashboard() {
     const d = FUNDS[currentFund];
     document.getElementById('db-title').textContent = d.title;
-    document.getElementById('k-aum').textContent    = d.aum;
 
-    set('k-mtd',       d.mtd.label,   'kpi-delta ' + d.mtd.cls);
-    set('k-daily',     d.daily.val,   'kpi-value '  + d.daily.cls);
-    set('k-daily-pct', d.daily.pct,   'kpi-delta '  + d.daily.cls);
-    set('k-upnl',      d.upnl.val,    'kpi-value '  + d.upnl.cls);
-    set('k-upnl-lbl',  d.upnl.lbl,   'kpi-delta '  + d.upnl.cls);
+    // Fetch live summary KPIs from backend
+    try {
+        const res = await fetch('/api/summary', { headers: _applyAuthHeader() });
+        if (res.ok) {
+            const summary = await res.json();
+            const fundKey = currentFund === 'longhorn' ? 'Longhorn Fund' : 'Endowment Fund';
+            const fund    = summary.funds?.find(f => f.fund_name === fundKey) || {};
 
-    document.getElementById('k-pos').textContent     = d.pos;
-    document.getElementById('k-sectors').textContent = `Across ${d.sectors_n} sectors`;
+            const fmtM  = v => v == null ? '—' : '$' + (Math.abs(v) >= 1e6
+                ? (Math.abs(v)/1e6).toFixed(1) + 'M'
+                : Math.abs(v).toLocaleString('en-US', {maximumFractionDigits:0}));
+            const fmtP  = v => v == null ? '—' : (v >= 0 ? '▲ ' : '▼ ') + Math.abs(v).toFixed(2) + '%';
+            const cls   = v => v == null ? 'neu' : v >= 0 ? 'pos' : 'neg';
+
+            const mv      = fund.market_value;
+            const daily   = fund.daily_pnl;
+            const upnl    = fund.unrealized_pnl;
+            const retPct  = fund.return_pct;
+            const pos     = fund.positions;
+            const asOf    = summary.as_of_date || '—';
+
+            document.getElementById('k-aum').textContent = fmtM(mv);
+            set('k-mtd',       `As of ${asOf}`,         'kpi-delta neu');
+            set('k-daily',     (daily >= 0 ? '+' : '') + fmtM(daily), 'kpi-value ' + cls(daily));
+            set('k-daily-pct', fmtP(summary.total_daily_pct),         'kpi-delta ' + cls(daily));
+            set('k-upnl',      (upnl  >= 0 ? '+' : '') + fmtM(upnl), 'kpi-value ' + cls(upnl));
+            set('k-upnl-lbl',  fmtP(retPct) + ' vs cost basis',       'kpi-delta ' + cls(upnl));
+            document.getElementById('k-pos').textContent     = pos ?? '—';
+            document.getElementById('k-sectors').textContent = `As of ${asOf}`;
+        }
+    } catch(e) {
+        console.warn('[renderDashboard] summary fetch failed:', e.message);
+    }
 
     document.getElementById('details').innerHTML   = d.details.map((x, i) =>
         `<div class="stat-row"><span class="stat-label">${x.label}${i === 0 ? '<span class="stat-info-icon" data-tip="Refer Analytics section for more details"><svg width="3" height="8" viewBox="0 0 4 11" fill="none"><circle cx="2" cy="1.8" r="1.5" fill="currentColor"/><line x1="2" y1="4.5" x2="2" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>' : ''}</span><span class="stat-val">${x.val}</span></div>`
