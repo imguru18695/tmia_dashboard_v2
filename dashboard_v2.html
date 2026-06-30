@@ -833,12 +833,8 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
             <option>ETF</option>
             <option>Cash</option>
         </select>
-        <select class="filter-select" id="h-date">
-            <option>May 27, 2026</option>
-            <option>May 22, 2026</option>
-            <option>May 15, 2026</option>
-            <option>May 8, 2026</option>
-            <option>Apr 24, 2026</option>
+        <select class="filter-select" id="h-date" onchange="renderHoldings()">
+            <option value="">Loading dates…</option>
         </select>
     </div>
 
@@ -1500,7 +1496,7 @@ function showScreen(name, btn) {
     document.getElementById('screen-' + name).classList.add('active');
     document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    if (name === 'holdings')  renderHoldings();
+    if (name === 'holdings')  { loadAvailableDates(); renderHoldings(); }
     if (name === 'analytics') renderAnalytics();
     if (name === 'watchlist') {
         wlRenderTable();
@@ -1801,6 +1797,26 @@ function buildDashTEChart(d) {
             }
         }
     });
+}
+
+// ── HOLDINGS DATE DROPDOWN ───────────────────────────────────────
+async function loadAvailableDates() {
+    try {
+        const res = await fetch('/api/available-dates', { headers: _applyAuthHeader() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const sel = document.getElementById('h-date');
+        const fund = currentFund === 'longhorn' ? 'Longhorn Fund' : 'Endowment Fund';
+        const dates = (data[fund] || []);
+        sel.innerHTML = dates.length
+            ? dates.map(d => {
+                const label = new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                return `<option value="${d}">${label}</option>`;
+              }).join('')
+            : '<option value="">No data uploaded</option>';
+    } catch(e) {
+        console.warn('Could not load available dates:', e.message);
+    }
 }
 
 // ── HOLDINGS UPLOAD / REFRESH ────────────────────────────────────
