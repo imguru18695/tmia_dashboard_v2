@@ -147,7 +147,11 @@ def enrich_with_prices(holdings: pd.DataFrame) -> pd.DataFrame:
     -------
     Enriched DataFrame with same unified schema + extra columns.
     """
-    all_tickers = holdings["ticker"].dropna().unique().tolist()
+    # Exclude pseudo-tickers that should never hit yfinance
+    all_tickers = [
+        t for t in holdings["ticker"].dropna().unique().tolist()
+        if not t.startswith("_")
+    ]
 
     price_df = fetch_prices(all_tickers)
 
@@ -177,8 +181,12 @@ def enrich_with_prices(holdings: pd.DataFrame) -> pd.DataFrame:
     # Drop helper column
     enriched = enriched.drop(columns=["live_price"])
 
-    # Unrealized P&L = market value - cost basis
-    enriched["unrealized_pnl"] = (enriched["market_value"] - enriched["cost_basis"]).round(2)
+    # Unrealized P&L — prefer the file value; fall back to mv - cost basis
+    if "unrealized_pnl" not in enriched.columns:
+        enriched["unrealized_pnl"] = (enriched["market_value"] - enriched["cost_basis"]).round(2)
+    else:
+        computed = (enriched["market_value"] - enriched["cost_basis"]).round(2)
+        enriched["unrealized_pnl"] = enriched["unrealized_pnl"].combine_first(computed)
 
     return enriched.reset_index(drop=True)
 

@@ -51,8 +51,18 @@ UNIFIED_COLUMNS = [
     "current_price",
     "market_value",
     "cost_basis",
+    "unrealized_pnl",
     "weight_pct",
 ]
+
+
+def _normalize_ticker(ticker: str) -> str:
+    """Normalize custodian tickers to yfinance format.
+
+    BRK/B → BRK-B  (slash → dash for share classes)
+    BF/B  → BF-B
+    """
+    return ticker.strip().replace("/", "-")
 
 
 # ---------------------------------------------------------------------------
@@ -179,13 +189,21 @@ def _read_endowment(path: Path, as_of_date: date) -> pd.DataFrame:
       Row 2 : Holdings header        (15 columns)
       Row 3+ : Holdings data rows
     """
+    from io import StringIO
+
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
 
+    # Extract cash balance from the header rows (row 0=header, row 1=values)
+    cash_mv = 0.0
+    try:
+        cash_header = pd.read_csv(StringIO("".join(lines[:2])))
+        cash_mv = float(cash_header["EndingCash"].iloc[0])
+    except Exception:
+        pass
+
     # Holdings start at line index 2 (0-based)
-    holdings_lines = lines[2:]
-    from io import StringIO
-    df_raw = pd.read_csv(StringIO("".join(holdings_lines)))
+    df_raw = pd.read_csv(StringIO("".join(lines[2:])))
 
     # Drop rows with no Symbol (safety guard)
     df_raw = df_raw.dropna(subset=["Symbol"])
@@ -194,14 +212,31 @@ def _read_endowment(path: Path, as_of_date: date) -> pd.DataFrame:
     df = pd.DataFrame({
         "fund_name"     : FUND_ENDOWMENT,
         "as_of_date"    : as_of_date,
-        "ticker"        : df_raw["Symbol"].str.strip(),
+        "ticker"        : df_raw["Symbol"].str.strip().apply(_normalize_ticker),
         "security_name" : df_raw["Description"].str.strip(),
-        "quantity"      : pd.to_numeric(df_raw["Quantity"],       errors="coerce"),
-        "current_price" : pd.to_numeric(df_raw["MarkPrice"],      errors="coerce"),
-        "market_value"  : pd.to_numeric(df_raw["PositionValue"],  errors="coerce"),
-        "cost_basis"    : pd.to_numeric(df_raw["CostBasisMoney"], errors="coerce"),
-        "weight_pct"    : pd.to_numeric(df_raw["PercentOfNAV"],   errors="coerce"),
+        "quantity"      : pd.to_numeric(df_raw["Quantity"],           errors="coerce"),
+        "current_price" : pd.to_numeric(df_raw["MarkPrice"],          errors="coerce"),
+        "market_value"  : pd.to_numeric(df_raw["PositionValue"],      errors="coerce"),
+        "cost_basis"    : pd.to_numeric(df_raw["CostBasisMoney"],     errors="coerce"),
+        "unrealized_pnl": pd.to_numeric(df_raw["FifoPnlUnrealized"],  errors="coerce"),
+        "weight_pct"    : pd.to_numeric(df_raw["PercentOfNAV"],       errors="coerce"),
     })
+
+    # Append cash as a pseudo-row
+    if cash_mv > 0:
+        cash_row = pd.DataFrame([{
+            "fund_name"     : FUND_ENDOWMENT,
+            "as_of_date"    : as_of_date,
+            "ticker"        : "_CASH",
+            "security_name" : "Cash & Cash Equivalents",
+            "quantity"      : cash_mv,
+            "current_price" : 1.0,
+            "market_value"  : cash_mv,
+            "cost_basis"    : cash_mv,
+            "unrealized_pnl": 0.0,
+            "weight_pct"    : None,
+        }])
+        df = pd.concat([df, cash_row], ignore_index=True)
 
     return df[UNIFIED_COLUMNS].reset_index(drop=True)
 
@@ -218,29 +253,51 @@ def _read_longhorn(path: Path, as_of_date: date) -> pd.DataFrame:
       Row 0 : Column headers
       Row 1+ : Holdings data (equity + cash)
 
-    Cash & Cash Equivalent rows are excluded from holdings
-    but their market value is captured separately for weight calculation.
+    Cash rows (blank Ticker) are captured as a _CASH pseudo-row.
+    All other rows with a valid Ticker are treated as equity positions.
     """
     df_raw = pd.read_excel(path, engine="xlrd", header=0)
 
-    # Exclude cash rows for holdings view (keep only EQUITY)
-    df_eq = df_raw[df_raw["Asset Category"].str.upper() == "EQUITY"].copy()
-    df_eq = df_eq.dropna(subset=["Ticker"])
-    df_eq = df_eq[df_eq["Ticker"].str.strip() != ""]
+    # Cash balance: sum MV of rows with no ticker
+    cash_mv = 0.0
+    try:
+        cash_mask = df_raw["Ticker"].isna() | (df_raw["Ticker"].astype(str).str.strip() == "")
+        cash_mv = pd.to_numeric(df_raw.loc[cash_mask, "Base Market Value"], errors="coerce").sum()
+    except Exception:
+        pass
 
-    df_eq = df_eq.reset_index(drop=True)
+    # Equity positions: rows with a valid Ticker
+    df_eq = df_raw.dropna(subset=["Ticker"]).copy()
+    df_eq = df_eq[df_eq["Ticker"].astype(str).str.strip() != ""].reset_index(drop=True)
 
     df = pd.DataFrame({
         "fund_name"     : FUND_LONGHORN,
         "as_of_date"    : as_of_date,
-        "ticker"        : df_eq["Ticker"].str.strip(),
-        "security_name" : df_eq["Security Description 1"].str.strip(),
-        "quantity"      : pd.to_numeric(df_eq["Shares/Par"],        errors="coerce"),
-        "current_price" : pd.to_numeric(df_eq["Base Price"],        errors="coerce"),
-        "market_value"  : pd.to_numeric(df_eq["Base Market Value"], errors="coerce"),
-        "cost_basis"    : pd.to_numeric(df_eq["Base Cost"],         errors="coerce"),
-        "weight_pct"    : pd.to_numeric(df_eq["Percent Of Total"],  errors="coerce"),
+        "ticker"        : df_eq["Ticker"].astype(str).str.strip().apply(_normalize_ticker),
+        "security_name" : df_eq["Security Description 1"].astype(str).str.strip(),
+        "quantity"      : pd.to_numeric(df_eq["Shares/Par"],                    errors="coerce"),
+        "current_price" : pd.to_numeric(df_eq["Base Price"],                    errors="coerce"),
+        "market_value"  : pd.to_numeric(df_eq["Base Market Value"],             errors="coerce"),
+        "cost_basis"    : pd.to_numeric(df_eq["Base Cost"],                     errors="coerce"),
+        "unrealized_pnl": pd.to_numeric(df_eq["Base Net Unrealized Gain/Loss"], errors="coerce"),
+        "weight_pct"    : pd.to_numeric(df_eq["Percent Of Total"],              errors="coerce"),
     })
+
+    # Append cash as a pseudo-row
+    if cash_mv > 0:
+        cash_row = pd.DataFrame([{
+            "fund_name"     : FUND_LONGHORN,
+            "as_of_date"    : as_of_date,
+            "ticker"        : "_CASH",
+            "security_name" : "Cash & Cash Equivalents",
+            "quantity"      : cash_mv,
+            "current_price" : 1.0,
+            "market_value"  : cash_mv,
+            "cost_basis"    : cash_mv,
+            "unrealized_pnl": 0.0,
+            "weight_pct"    : None,
+        }])
+        df = pd.concat([df, cash_row], ignore_index=True)
 
     return df[UNIFIED_COLUMNS].reset_index(drop=True)
 
