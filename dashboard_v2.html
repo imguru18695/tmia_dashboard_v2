@@ -812,8 +812,10 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
             <div class="page-sub" id="h-sub">As of May 27, 2026 &nbsp;·&nbsp; 42 positions</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-            <button class="icon-btn" title="Refresh">↻</button>
+            <button class="icon-btn" title="Refresh" onclick="refreshHoldings()">↻</button>
             <button class="btn btn-outline" onclick="exportCSV()">⬇ Export CSV</button>
+            <input type="file" id="holdings-file-input" accept=".csv,.xls,.xlsx" style="display:none" onchange="uploadHoldings(this)">
+            <button class="btn btn-primary" onclick="document.getElementById('holdings-file-input').click()">⬆ Upload Holdings</button>
         </div>
     </div>
 
@@ -1799,6 +1801,50 @@ function buildDashTEChart(d) {
             }
         }
     });
+}
+
+// ── HOLDINGS UPLOAD / REFRESH ────────────────────────────────────
+async function uploadHoldings(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const btn = document.querySelector('#screen-holdings .btn-primary');
+    const origText = btn.textContent;
+    btn.textContent = 'Uploading…';
+    btn.disabled = true;
+
+    const form = new FormData();
+    form.append('file', file);
+    try {
+        const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: _applyAuthHeader(),
+            body: form
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+            alert(`✓ ${data.message || 'Upload successful'}`);
+        } else {
+            alert(`Upload failed: ${data.detail || res.status}`);
+        }
+    } catch(e) {
+        alert(`Upload error: ${e.message}`);
+    } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+        input.value = '';
+    }
+}
+
+async function refreshHoldings() {
+    try {
+        const res = await fetch('/api/refresh', {
+            method: 'POST',
+            headers: _applyAuthHeader()
+        });
+        if (res.ok) renderHoldings();
+    } catch(e) {
+        console.warn('Refresh failed:', e.message);
+    }
 }
 
 // ── HOLDINGS SCREEN ──────────────────────────────────────────────
