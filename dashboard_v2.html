@@ -1813,6 +1813,7 @@ async function uploadHoldings(input) {
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
             alert(`✓ ${data.message || 'Upload successful'}`);
+            await loadAvailableDates();
         } else {
             alert(`Upload failed: ${data.detail || res.status}`);
         }
