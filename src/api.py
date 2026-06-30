@@ -218,9 +218,10 @@ def get_summary():
         unrealzd = grp["unrealized_pnl"].sum() if "unrealized_pnl" in grp.columns else mv - cost
         daily    = grp["daily_pnl"].sum()       if "daily_pnl" in grp.columns else 0.0
         ret_pct  = ((mv - cost) / cost * 100)   if cost != 0 else 0.0
+        pos_count = int((~grp["ticker"].str.startswith("_")).sum())
         funds.append({
             "fund_name"     : fund_name,
-            "positions"     : len(grp),
+            "positions"     : pos_count,
             "market_value"  : _clean(round(mv, 2)),
             "cost_basis"    : _clean(round(cost, 2)),
             "unrealized_pnl": _clean(round(unrealzd, 2)),
@@ -232,7 +233,7 @@ def get_summary():
 
     return {
         "as_of_date"        : as_of,
-        "total_positions"   : len(df),
+        "total_positions"   : int((~df["ticker"].str.startswith("_")).sum()),
         "total_funds"       : df["fund_name"].nunique(),
         "combined_aum"      : _clean(round(total_mv, 2)),
         "total_cost_basis"  : _clean(round(total_cost, 2)),
