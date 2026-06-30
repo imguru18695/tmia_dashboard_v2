@@ -1832,14 +1832,17 @@ async function refreshHoldings() {
             method: 'POST',
             headers: _applyAuthHeader()
         });
-        if (res.ok) renderHoldings();
+        if (res.ok) {
+            await loadAvailableDates();
+            renderHoldings();
+        }
     } catch(e) {
         console.warn('Refresh failed:', e.message);
     }
 }
 
 // ── HOLDINGS SCREEN ──────────────────────────────────────────────
-function renderHoldings() {
+async function renderHoldings() {
     const d  = FUNDS[currentFund];
     const isLonghorn = currentFund === 'longhorn';
 
@@ -1848,21 +1851,71 @@ function renderHoldings() {
     ['returns','events','risk','momentum'].forEach(g => document.getElementById('btn-'+g)?.classList.remove('active'));
 
     document.getElementById('h-title').textContent = d.title + ' — Holdings';
-    document.getElementById('h-sub').textContent   = `As of May 27, 2026 · ${d.pos} positions`;
-
-    // Show/hide classification tabs; sync active button to currentClass
     document.getElementById('class-tabs').style.display = isLonghorn ? 'flex' : 'none';
     document.querySelectorAll('.class-tab').forEach(b =>
         b.classList.toggle('active', b.dataset.class === currentClass));
 
-    // Summary strip
-    const s = d.holdSummary;
-    document.getElementById('h-summary').innerHTML = `
-        <div class="sum-card"><div class="sum-label">As of Date</div><div class="sum-value date-val">${s.date}</div><span class="sum-sub neu">Live · Market Close</span></div>
-        <div class="sum-card"><div class="sum-label">Positions</div><div class="sum-value">${s.pos}</div><span class="sum-sub neu">Across ${d.sectors_n} sectors</span></div>
-        <div class="sum-card"><div class="sum-label">Cost Basis</div><div class="sum-value">${s.cost}</div><span class="sum-sub neu">Total invested</span></div>
-        <div class="sum-card"><div class="sum-label">Market Value</div><div class="sum-value">${s.mv}</div><span class="sum-sub ${d.mtd.cls}">${d.mtd.label}</span></div>
-        <div class="sum-card"><div class="sum-label">Unrealized P&L</div><div class="sum-value ${s.posClass}">${s.upnl}</div><span class="sum-sub ${s.posClass}">${s.upnlPct} return</span></div>`;
+    // Fetch live holdings from backend
+    try {
+        const fund = currentFund === 'longhorn' ? 'longhorn' : 'endowment';
+        const res  = await fetch(`/api/portfolio/${fund}`, { headers: _applyAuthHeader() });
+        if (res.ok) {
+            const json = await res.json();
+            // Map API fields → frontend field names used by applyFilters/row renderer
+            d.holdings = (json.data || []).map(r => ({
+                ticker  : r.ticker,
+                name    : r.security_name,
+                sector  : r.sector   || '—',
+                cls     : r.cls      || null,
+                qty     : r.quantity      || 0,
+                price   : r.current_price || 0,
+                mv      : r.market_value  || 0,
+                cost    : r.cost_basis    || 0,
+                upnl    : r.unrealized_pnl,
+                ret1d   : r.daily_pnl_pct != null ? parseFloat(r.daily_pnl_pct) : null,
+                ret1m   : null,
+                ret3m   : null,
+                low52   : null,
+                high52  : null,
+                nextEarnings: null,
+                exDiv   : null,
+                divYield: null,
+                beta    : null,
+                vol     : null,
+                sharpe  : null,
+                corrSpy : null,
+                vsMa50  : null,
+                vsMa200 : null,
+                from52wHigh: null,
+                analystRec : null,
+                numAnalysts: null,
+            }));
+
+            // Build summary strip from data
+            const totalMV   = d.holdings.reduce((s, r) => s + r.mv, 0);
+            const totalCost = d.holdings.reduce((s, r) => s + r.cost, 0);
+            const totalUpnl = d.holdings.reduce((s, r) => s + (r.upnl || r.mv - r.cost), 0);
+            const upnlPct   = totalCost ? (totalUpnl / totalCost * 100) : 0;
+            const posClass  = totalUpnl >= 0 ? 'pos' : 'neg';
+            const asOf      = json.data?.[0]?.as_of_date || '—';
+            const pos       = d.holdings.filter(r => r.ticker !== '_CASH').length;
+            const fmt       = v => '$' + Math.abs(v).toLocaleString('en-US', {maximumFractionDigits:0});
+            const fmtPct    = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+
+            document.getElementById('h-sub').textContent = `As of ${asOf} · ${pos} positions`;
+            document.getElementById('h-summary').innerHTML = `
+                <div class="sum-card"><div class="sum-label">As of Date</div><div class="sum-value date-val">${asOf}</div><span class="sum-sub neu">Live · Market Close</span></div>
+                <div class="sum-card"><div class="sum-label">Positions</div><div class="sum-value">${pos}</div></div>
+                <div class="sum-card"><div class="sum-label">Cost Basis</div><div class="sum-value">${fmt(totalCost)}</div><span class="sum-sub neu">Total invested</span></div>
+                <div class="sum-card"><div class="sum-label">Market Value</div><div class="sum-value">${fmt(totalMV)}</div></div>
+                <div class="sum-card"><div class="sum-label">Unrealized P&L</div><div class="sum-value ${posClass}">${totalUpnl >= 0 ? '+' : ''}${fmt(totalUpnl)}</div><span class="sum-sub ${posClass}">${fmtPct(upnlPct)} return</span></div>`;
+        } else {
+            document.getElementById('h-sub').textContent = 'No data — upload a holdings file';
+            document.getElementById('h-summary').innerHTML = '';
+        }
+    } catch(e) {
+        console.warn('[renderHoldings] fetch failed:', e.message);
+    }
 
     applyFilters();
 }
