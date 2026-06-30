@@ -1551,7 +1551,7 @@ const benchCache = {};
 
 async function fetchAndApplyBenchmark(fund) {
     try {
-        const res = await fetch(`/api/benchmark/${fund}`);
+        const res = await fetch(`/api/benchmark/${fund}`, { headers: _applyAuthHeader() });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         benchCache[fund] = data;
@@ -3316,7 +3316,9 @@ function umDeleteUser(id) {
 
 function logout() {
     currentUser = null;
+    _authHeader = '';
     localStorage.removeItem('tmia_session');
+    localStorage.removeItem('tmia_auth');
     document.getElementById('profile-initials').textContent = '--';
     document.getElementById('login-username').value = '';
     document.getElementById('login-password').value = '';
@@ -3365,7 +3367,15 @@ function updateProfileNav() {
     }));
 })();
 
-function submitLogin() {
+// Stores the Basic Auth header for all API calls; set on successful login
+let _authHeader = localStorage.getItem('tmia_auth') || '';
+
+function _applyAuthHeader(headers = {}) {
+    if (_authHeader) headers['Authorization'] = _authHeader;
+    return headers;
+}
+
+async function submitLogin() {
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
     const btn = document.getElementById('login-btn');
@@ -3374,11 +3384,17 @@ function submitLogin() {
     btn.textContent = 'Signing in…';
     btn.disabled = true;
 
-    // ── Swap this block for a real POST /api/auth/login call on Day 1 ──
-    setTimeout(() => {
-const match = umUsers.find(u => u.username === username && u.password === password && u.status === 'active');
-        if (match) {
-            currentUser = { username: match.username, role: match.role };
+    const encoded = btoa(username + ':' + password);
+    const authHeader = 'Basic ' + encoded;
+
+    try {
+        const res = await fetch('/api/risk-free-rate', {
+            headers: { 'Authorization': authHeader }
+        });
+        if (res.ok || res.status === 200) {
+            _authHeader = authHeader;
+            localStorage.setItem('tmia_auth', authHeader);
+            currentUser = { username, role: 'admin' };
             localStorage.setItem('tmia_session', JSON.stringify(currentUser));
             document.getElementById('login-screen').style.display = 'none';
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -3386,31 +3402,49 @@ const match = umUsers.find(u => u.username === username && u.password === passwo
             document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
             document.querySelector('.nav-link').classList.add('active');
             updateProfileNav();
+            const d = await res.json().catch(() => ({}));
+            if (d.rate !== undefined) sharpeRf = d.rate;
             renderDashboard();
         } else {
             err.style.display = 'block';
             btn.textContent = 'Sign In';
             btn.disabled = false;
         }
-    }, 600);
+    } catch(e) {
+        err.style.display = 'block';
+        btn.textContent = 'Sign In';
+        btn.disabled = false;
+    }
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
-fetch('/api/risk-free-rate')
-    .then(r => r.json())
-    .then(d => { sharpeRf = d.rate; })
-    .catch(() => {});
+// risk-free-rate is fetched during submitLogin() to validate credentials;
+// if a session is restored from localStorage, fetch it now with the stored header.
+(function initRfr() {
+    if (!_authHeader) return;
+    fetch('/api/risk-free-rate', { headers: _applyAuthHeader() })
+        .then(r => r.json())
+        .then(d => { if (d.rate !== undefined) sharpeRf = d.rate; })
+        .catch(() => {});
+})();
 
 // Restore session from localStorage if available
-(function restoreSession() {
+(async function restoreSession() {
     try {
         const saved = localStorage.getItem('tmia_session');
-        if (!saved) return;
+        if (!saved || !_authHeader) return;
         const user = JSON.parse(saved);
-        // Validate the saved user still exists and is active
-        const match = umUsers.find(u => u.username === user.username && u.status === 'active');
-        if (!match) { localStorage.removeItem('tmia_session'); return; }
-        currentUser = { username: match.username, role: match.role };
+        // Validate stored credentials still work against the backend
+        const res = await fetch('/api/risk-free-rate', { headers: _applyAuthHeader() });
+        if (!res.ok) {
+            localStorage.removeItem('tmia_session');
+            localStorage.removeItem('tmia_auth');
+            _authHeader = '';
+            return;
+        }
+        const d = await res.json().catch(() => ({}));
+        if (d.rate !== undefined) sharpeRf = d.rate;
+        currentUser = { username: user.username, role: user.role || 'admin' };
         document.getElementById('login-screen').style.display = 'none';
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById('screen-dashboard').classList.add('active');
@@ -3420,6 +3454,8 @@ fetch('/api/risk-free-rate')
         renderDashboard();
     } catch(e) {
         localStorage.removeItem('tmia_session');
+        localStorage.removeItem('tmia_auth');
+        _authHeader = '';
     }
 })();
 </script>
