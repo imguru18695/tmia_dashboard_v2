@@ -1476,6 +1476,7 @@ function showScreen(name, btn) {
         wlRenderTable();
         document.getElementById('wl-sub').textContent =
             `${wlItems.length} ticker${wlItems.length !== 1 ? 's' : ''} · Shared across all fund managers`;
+        wlRefreshPrices();
     }
 }
 
@@ -1627,8 +1628,35 @@ async function renderDashboard() {
     document.getElementById('details').innerHTML   = d.details.map((x, i) =>
         `<div class="stat-row"><span class="stat-label">${x.label}${i === 0 ? '<span class="stat-info-icon" data-tip="Refer Analytics section for more details"><svg width="3" height="8" viewBox="0 0 4 11" fill="none"><circle cx="2" cy="1.8" r="1.5" fill="currentColor"/><line x1="2" y1="4.5" x2="2" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>' : ''}</span><span class="stat-val">${x.val}</span></div>`
     ).join('');
-    document.getElementById('sectors').innerHTML   = d.sectors.map(s => `<div class="sector-row"><span class="sector-name">${s.name}</span><div class="bar-track"><div class="bar-fill" style="width:${s.pct}%"></div></div><span class="sector-pct">${s.pct}%</span></div>`).join('');
+    renderSectors(d);
     document.getElementById('ret-table').innerHTML = buildRetTable(d.returns);
+    // Populate holdings if not yet loaded (e.g. user lands on dashboard without visiting holdings)
+    if (d.holdings.length === 0) {
+        try {
+            const fund = currentFund === 'longhorn' ? 'longhorn' : 'endowment';
+            const res  = await fetch(`/api/portfolio/${fund}`, { headers: _applyAuthHeader() });
+            if (res.ok) {
+                const json = await res.json();
+                d.holdings = (json.data || []).map(r => ({
+                    ticker: r.ticker,       name: r.security_name,
+                    sector: r.sector || '—', cls: r.cls || null,
+                    qty:    r.quantity      || 0,
+                    price:  r.current_price || 0,
+                    mv:     r.market_value  || 0,
+                    cost:   r.cost_basis    || 0,
+                    upnl:   r.unrealized_pnl,
+                    weight_pct: r.weight_pct ?? null,
+                    ret1d: r.daily_pnl_pct != null ? parseFloat(r.daily_pnl_pct) : null,
+                    ret1m: r.ret1m ?? null, ret3m: r.ret3m ?? null,
+                    low52: r.low52 ?? null, high52: r.high52 ?? null,
+                    nextEarnings: null, exDiv: null, divYield: null,
+                    beta: null, vol: null, sharpe: null, corrSpy: null,
+                    vsMa50: null, vsMa200: null, from52wHigh: null,
+                    analystRec: null, numAnalysts: null,
+                }));
+            }
+        } catch(e) { console.warn('[renderDashboard] holdings prefetch failed:', e.message); }
+    }
     renderTopMovers(d);
 
     buildPerfChart(d);
@@ -1656,6 +1684,29 @@ function buildRetTable(rows) {
         ? `<tr><td>${r.period}</td><td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>`
         : `<tr><td>${r.period}</td><td class="${r.pos?'pos':'neg'}">${r.fund}</td><td>${r.bench}</td><td class="${r.pos?'pos':'neg'}">${r.excess}</td></tr>`
     ).join('') + '</tbody>';
+}
+
+function renderSectors(d) {
+    const el = document.getElementById('sectors');
+    if (!el) return;
+
+    // Use live holdings if sector data is available, else fall back to hardcoded
+    const withSector = d.holdings.filter(r => !r.ticker.startsWith('_') && r.sector && r.sector !== '—');
+    if (withSector.length > 0) {
+        const totalMV = withSector.reduce((s, r) => s + r.mv, 0);
+        const map = {};
+        for (const r of withSector) map[r.sector] = (map[r.sector] || 0) + r.mv;
+        const rows = Object.entries(map)
+            .map(([name, mv]) => ({ name, pct: Math.round(mv / totalMV * 100) }))
+            .sort((a, b) => b.pct - a.pct);
+        el.innerHTML = rows.map(s =>
+            `<div class="sector-row"><span class="sector-name">${s.name}</span><div class="bar-track"><div class="bar-fill" style="width:${s.pct}%"></div></div><span class="sector-pct">${s.pct}%</span></div>`
+        ).join('');
+    } else {
+        el.innerHTML = d.sectors.map(s =>
+            `<div class="sector-row"><span class="sector-name">${s.name}</span><div class="bar-track"><div class="bar-fill" style="width:${s.pct}%"></div></div><span class="sector-pct">${s.pct}%</span></div>`
+        ).join('');
+    }
 }
 
 function renderTopMovers(d) {
@@ -1981,6 +2032,7 @@ async function _loadBulkSignals(d) {
                     from52wHigh : s.from_52w_high ?? r.from52wHigh,
                     analystRec  : s.analyst_rec   ?? r.analystRec,
                     numAnalysts : s.num_analysts  ?? r.numAnalysts,
+                    sector      : s.sector             ?? r.sector,
                     divYield    : s.div_yield != null ? s.div_yield.toFixed(2) + '%' : r.divYield,
                     exDiv       : s.ex_div_date        ?? r.exDiv,
                     nextEarnings: s.next_earnings_date ?? r.nextEarnings,
@@ -1988,6 +2040,8 @@ async function _loadBulkSignals(d) {
             });
         }
         applyFilters();
+        // Update sector breakdown on dashboard if it's visible
+        renderSectors(d);
     } catch(e) {
         console.warn('[signals] bulk-signals failed:', e.message);
     }
@@ -3171,6 +3225,32 @@ function wlCanDelete(item) {
     if (currentUser.role === 'admin') return true;
     if (currentUser.role === 'manager' && item.addedBy === currentUser.username) return true;
     return false;
+}
+
+async function wlRefreshPrices() {
+    if (!wlItems.length) return;
+    const tickers = wlItems.map(i => i.ticker).join(',');
+    try {
+        const res = await fetch(`/api/quote?tickers=${encodeURIComponent(tickers)}`,
+            { headers: _applyAuthHeader() });
+        if (!res.ok) return;
+        const json = await res.json();
+        const quotes = json.quotes || {};
+        let changed = false;
+        for (const item of wlItems) {
+            const q = quotes[item.ticker];
+            if (!q || q.price == null) continue;
+            // Keep priceAdded as the original entry price; only update priceCur
+            if (item.priceAdded == null) item.priceAdded = q.price;
+            item.priceCur = q.price;
+            item.ret1m = q.ret1m ?? item.ret1m;
+            item.ret3m = q.ret3m ?? item.ret3m;
+            changed = true;
+        }
+        if (changed) wlRenderTable();
+    } catch(e) {
+        console.warn('[watchlist] price refresh failed:', e.message);
+    }
 }
 
 function wlRenderTable() {

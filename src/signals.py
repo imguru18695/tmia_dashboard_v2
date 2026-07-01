@@ -164,6 +164,8 @@ def compute_signals(ticker: str, period: str = "2y") -> dict:
     except (TypeError, ValueError):
         num_analysts = None
 
+    sector = info.get("sector") or None
+
     # Dividend yield (stored as decimal in yfinance, e.g. 0.013 = 1.3%)
     div_yield_raw = info.get("dividendYield")
     div_yield = round(float(div_yield_raw) * 100, 2) if div_yield_raw is not None else None
@@ -201,6 +203,7 @@ def compute_signals(ticker: str, period: str = "2y") -> dict:
         "from_52w_high":      from_52w_high,
         "analyst_rec":        analyst_rec,
         "num_analysts":       num_analysts,
+        "sector":             sector,
         "div_yield":          div_yield,
         "ex_div_date":        ex_div_date,
         "next_earnings_date": next_earnings_date,
