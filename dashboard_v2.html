@@ -1613,9 +1613,9 @@ async function renderDashboard() {
 
             document.getElementById('k-aum').textContent = fmtM(mv);
             set('k-mtd',       `As of ${asOf}`,         'kpi-delta neu');
-            set('k-daily',     (daily >= 0 ? '+' : '') + fmtM(daily), 'kpi-value ' + cls(daily));
-            set('k-daily-pct', fmtP(summary.total_daily_pct),         'kpi-delta ' + cls(daily));
-            set('k-upnl',      (upnl  >= 0 ? '+' : '') + fmtM(upnl), 'kpi-value ' + cls(upnl));
+            set('k-daily',     daily != null ? (daily >= 0 ? '+' : '') + fmtM(daily) : '—', 'kpi-value ' + cls(daily));
+            set('k-daily-pct', fmtP(summary.total_daily_pct),                                  'kpi-delta ' + cls(daily));
+            set('k-upnl',      upnl  != null ? (upnl  >= 0 ? '+' : '') + fmtM(upnl)  : '—', 'kpi-value ' + cls(upnl));
             set('k-upnl-lbl',  fmtP(retPct) + ' vs cost basis',       'kpi-delta ' + cls(upnl));
             document.getElementById('k-pos').textContent     = pos ?? '—';
             document.getElementById('k-sectors').textContent = `As of ${asOf}`;
@@ -1902,10 +1902,10 @@ async function renderHoldings() {
                 cost    : r.cost_basis    || 0,
                 upnl    : r.unrealized_pnl,
                 ret1d   : r.daily_pnl_pct != null ? parseFloat(r.daily_pnl_pct) : null,
-                ret1m   : null,
-                ret3m   : null,
-                low52   : null,
-                high52  : null,
+                ret1m   : r.ret1m   ?? null,
+                ret3m   : r.ret3m   ?? null,
+                low52   : r.low52   ?? null,
+                high52  : r.high52  ?? null,
                 nextEarnings: null,
                 exDiv   : null,
                 divYield: null,
@@ -1923,7 +1923,7 @@ async function renderHoldings() {
             // Build summary strip from data
             const totalMV   = d.holdings.reduce((s, r) => s + r.mv, 0);
             const totalCost = d.holdings.reduce((s, r) => s + r.cost, 0);
-            const totalUpnl = d.holdings.reduce((s, r) => s + (r.upnl || r.mv - r.cost), 0);
+            const totalUpnl = d.holdings.reduce((s, r) => s + (r.upnl != null ? r.upnl : r.mv - r.cost), 0);
             const upnlPct   = totalCost ? (totalUpnl / totalCost * 100) : 0;
             const posClass  = totalUpnl >= 0 ? 'pos' : 'neg';
             const asOf      = json.data?.[0]?.as_of_date || '—';
@@ -1947,6 +1947,50 @@ async function renderHoldings() {
     }
 
     applyFilters();
+
+    // Fire signals in background — merges back into d.holdings and re-renders
+    _loadBulkSignals(d);
+}
+
+async function _loadBulkSignals(d) {
+    const equityTickers = d.holdings
+        .filter(r => !r.ticker.startsWith('_'))
+        .map(r => r.ticker);
+    if (!equityTickers.length) return;
+    // API accepts max 50; chunk if needed
+    const chunks = [];
+    for (let i = 0; i < equityTickers.length; i += 50) chunks.push(equityTickers.slice(i, i + 50));
+    try {
+        for (const chunk of chunks) {
+            const res = await fetch(`/api/bulk-signals?tickers=${encodeURIComponent(chunk.join(','))}`,
+                { headers: _applyAuthHeader() });
+            if (!res.ok) continue;
+            const json = await res.json();
+            const sigs = json.signals || {};
+            d.holdings = d.holdings.map(r => {
+                const s = sigs[r.ticker];
+                if (!s) return r;
+                return {
+                    ...r,
+                    beta        : s.beta          ?? r.beta,
+                    vol         : s.vol           ?? r.vol,
+                    sharpe      : s.sharpe        ?? r.sharpe,
+                    corrSpy     : s.corr_spy      ?? r.corrSpy,
+                    vsMa50      : s.vs_ma50       ?? r.vsMa50,
+                    vsMa200     : s.vs_ma200      ?? r.vsMa200,
+                    from52wHigh : s.from_52w_high ?? r.from52wHigh,
+                    analystRec  : s.analyst_rec   ?? r.analystRec,
+                    numAnalysts : s.num_analysts  ?? r.numAnalysts,
+                    divYield    : s.div_yield != null ? s.div_yield.toFixed(2) + '%' : r.divYield,
+                    exDiv       : s.ex_div_date        ?? r.exDiv,
+                    nextEarnings: s.next_earnings_date ?? r.nextEarnings,
+                };
+            });
+        }
+        applyFilters();
+    } catch(e) {
+        console.warn('[signals] bulk-signals failed:', e.message);
+    }
 }
 
 function th(label, col, sortable, extraClass = '') {
@@ -3139,7 +3183,9 @@ function wlRenderTable() {
         return;
     }
     empty.style.display = 'none';
-    const chgSinceAdded = item => ((item.priceCur - item.priceAdded) / item.priceAdded * 100);
+    const chgSinceAdded = item => (item.priceCur != null && item.priceAdded)
+        ? (item.priceCur - item.priceAdded) / item.priceAdded * 100
+        : null;
     tbody.innerHTML = wlItems.map(item => {
         const chg = chgSinceAdded(item);
         const canDel = wlCanDelete(item);
@@ -3251,21 +3297,40 @@ function wlResetSubmitBtn() {
     btn.style.cursor      = 'not-allowed';
 }
 
-function wlAddTicker() {
-    const ticker    = document.getElementById('wl-ticker-val').value;
-    const name      = document.getElementById('wl-name-val').value;
-    const group     = document.getElementById('wl-group').value;
-    const notes     = document.getElementById('wl-notes').value.trim();
-    const mockPrice = +(80 + Math.random() * 420).toFixed(2);
-    wlItems.push({
+async function wlAddTicker() {
+    const ticker = document.getElementById('wl-ticker-val').value;
+    const name   = document.getElementById('wl-name-val').value;
+    const group  = document.getElementById('wl-group').value;
+    const notes  = document.getElementById('wl-notes').value.trim();
+    const item = {
         id: wlNextId++, ticker, name, group,
-        priceAdded: mockPrice, priceCur: mockPrice,
+        priceAdded: null, priceCur: null,
         ret1m: null, ret3m: null, ret1y: null,
         notes, addedBy: currentUser.username,
         dateAdded: new Date().toISOString().slice(0, 10),
-    });
+    };
+    wlItems.push(item);
     wlRenderTable();
     wlToggleForm();
+
+    // Fetch live price in background
+    try {
+        const res = await fetch(`/api/quote?tickers=${encodeURIComponent(ticker)}`,
+            { headers: _applyAuthHeader() });
+        if (res.ok) {
+            const json = await res.json();
+            const q = (json.quotes || {})[ticker];
+            if (q && q.price != null) {
+                item.priceCur  = q.price;
+                item.priceAdded = q.price;
+                item.ret1m = q.ret1m ?? null;
+                item.ret3m = q.ret3m ?? null;
+                wlRenderTable();
+            }
+        }
+    } catch(e) {
+        console.warn('[watchlist] quote fetch failed:', e.message);
+    }
     document.getElementById('wl-sub').textContent =
         `${wlItems.length} ticker${wlItems.length !== 1 ? 's' : ''} · Shared across all fund managers`;
 }

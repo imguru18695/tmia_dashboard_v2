@@ -64,7 +64,8 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
     """
     if not tickers:
         return pd.DataFrame(columns=["ticker", "live_price", "prev_close",
-                                     "price_time", "price_source"])
+                                     "price_time", "price_source",
+                                     "ret1m", "ret3m", "low52", "high52"])
 
     # Build Yahoo tickers list (deduplicated)
     unique = list(dict.fromkeys(tickers))  # preserve order, remove dupes
@@ -72,12 +73,11 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
 
     print(f"  Fetching prices for {len(yahoo_tickers)} tickers from Yahoo Finance...")
 
-    # Bulk download — period="5d" gives us enough history for prev_close
-    # auto_adjust=True adjusts for splits/dividends
+    # 1-year download: gives prev_close, 1M/3M returns, and 52-week range in one call
     try:
         raw = yf.download(
             tickers=yahoo_tickers,
-            period="5d",
+            period="1y",
             interval="1d",
             auto_adjust=True,
             progress=False,
@@ -85,7 +85,8 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
     except Exception as e:
         print(f"  [WARNING] Yahoo Finance download failed: {e}")
         return pd.DataFrame(columns=["ticker", "live_price", "prev_close",
-                                     "price_time", "price_source"])
+                                     "price_time", "price_source",
+                                     "ret1m", "ret3m", "low52", "high52"])
 
     results = []
 
@@ -101,9 +102,14 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
             if close_series.empty:
                 raise ValueError("No data returned")
 
-            live_price  = float(close_series.iloc[-1])
-            prev_close  = float(close_series.iloc[-2]) if len(close_series) >= 2 else live_price
-            price_time  = close_series.index[-1].to_pydatetime()
+            live_price = float(close_series.iloc[-1])
+            prev_close = float(close_series.iloc[-2]) if len(close_series) >= 2 else live_price
+            price_time = close_series.index[-1].to_pydatetime()
+
+            # Period returns — approximate trading-day counts: 1M≈21, 3M≈63
+            n = len(close_series)
+            ret1m = round((live_price / float(close_series.iloc[-22]) - 1) * 100, 2) if n >= 22 else None
+            ret3m = round((live_price / float(close_series.iloc[-64]) - 1) * 100, 2) if n >= 64 else None
 
             results.append({
                 "ticker"      : custodian_t,
@@ -111,6 +117,10 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
                 "prev_close"  : round(prev_close, 4),
                 "price_time"  : price_time,
                 "price_source": "live",
+                "ret1m"       : ret1m,
+                "ret3m"       : ret3m,
+                "low52"       : round(float(close_series.min()), 4),
+                "high52"      : round(float(close_series.max()), 4),
             })
 
         except Exception:
@@ -121,6 +131,10 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
                 "prev_close"  : None,
                 "price_time"  : None,
                 "price_source": "failed",
+                "ret1m"       : None,
+                "ret3m"       : None,
+                "low52"       : None,
+                "high52"      : None,
             })
 
     return pd.DataFrame(results)
@@ -181,12 +195,9 @@ def enrich_with_prices(holdings: pd.DataFrame) -> pd.DataFrame:
     # Drop helper column
     enriched = enriched.drop(columns=["live_price"])
 
-    # Unrealized P&L — prefer the file value; fall back to mv - cost basis
-    if "unrealized_pnl" not in enriched.columns:
-        enriched["unrealized_pnl"] = (enriched["market_value"] - enriched["cost_basis"]).round(2)
-    else:
-        computed = (enriched["market_value"] - enriched["cost_basis"]).round(2)
-        enriched["unrealized_pnl"] = enriched["unrealized_pnl"].combine_first(computed)
+    # Unrealized P&L — prefer file value; fill any NaN with mv - cost basis
+    computed = (enriched["market_value"] - enriched["cost_basis"]).round(2)
+    enriched["unrealized_pnl"] = enriched["unrealized_pnl"].combine_first(computed)
 
     return enriched.reset_index(drop=True)
 

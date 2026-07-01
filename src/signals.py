@@ -9,12 +9,13 @@ Momentum Signals  : vs 50D MA, vs 200D MA, % from 52W high,
 """
 
 import time
+import datetime
 import threading
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
-_SKIP = {"CASH", "CASH & EQUIVALENTS", ""}
+_SKIP = {"CASH", "CASH & EQUIVALENTS", "", "_CASH"}
 
 # ---------------------------------------------------------------------------
 # Live risk-free rate (3-month T-bill, ^IRX) — 24-hour TTL, thread-safe
@@ -163,15 +164,44 @@ def compute_signals(ticker: str, period: str = "2y") -> dict:
     except (TypeError, ValueError):
         num_analysts = None
 
+    # Dividend yield (stored as decimal in yfinance, e.g. 0.013 = 1.3%)
+    div_yield_raw = info.get("dividendYield")
+    div_yield = round(float(div_yield_raw) * 100, 2) if div_yield_raw is not None else None
+
+    # Ex-dividend date (Unix timestamp → ISO string)
+    ex_div_date = None
+    ex_div_ts = info.get("exDividendDate")
+    if ex_div_ts:
+        try:
+            ex_div_date = datetime.date.fromtimestamp(int(ex_div_ts)).isoformat()
+        except Exception:
+            pass
+
+    # Next earnings date (earningsTimestamp is most reliable)
+    next_earnings_date = None
+    earn_ts = info.get("earningsTimestamp")
+    if earn_ts is None:
+        earn_ts = info.get("earningsDate")
+    if earn_ts is not None:
+        try:
+            if isinstance(earn_ts, (list, tuple)):
+                earn_ts = earn_ts[0]
+            next_earnings_date = datetime.date.fromtimestamp(int(earn_ts)).isoformat()
+        except Exception:
+            pass
+
     return {
-        "beta":           _clean(beta),
-        "vol":            _clean(ann_vol, 1),
-        "sharpe":         _clean(sharpe),
-        "sharpe_rf":      round(rf_annual * 100, 2),
-        "corr_spy":       _clean(corr),
-        "vs_ma50":        vs_ma50,
-        "vs_ma200":       vs_ma200,
-        "from_52w_high":  from_52w_high,
-        "analyst_rec":    analyst_rec,
-        "num_analysts":   num_analysts,
+        "beta":               _clean(beta),
+        "vol":                _clean(ann_vol, 1),
+        "sharpe":             _clean(sharpe),
+        "sharpe_rf":          round(rf_annual * 100, 2),
+        "corr_spy":           _clean(corr),
+        "vs_ma50":            vs_ma50,
+        "vs_ma200":           vs_ma200,
+        "from_52w_high":      from_52w_high,
+        "analyst_rec":        analyst_rec,
+        "num_analysts":       num_analysts,
+        "div_yield":          div_yield,
+        "ex_div_date":        ex_div_date,
+        "next_earnings_date": next_earnings_date,
     }

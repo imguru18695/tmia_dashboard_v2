@@ -44,7 +44,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from data_manager import DataManager
 from ingestion import load_holdings_for_date, list_available_dates, HOLDINGS_FOLDER
-from prices import enrich_with_prices, calculate_period_returns
+from prices import fetch_prices, enrich_with_prices, calculate_period_returns
 try:
     from signals import compute_signals, _get_rf_annual as _signals_get_rf
 except ImportError as _e:
@@ -458,6 +458,39 @@ def get_risk_free_rate():
         rate_decimal = _signals_get_rf()   # cached decimal, e.g. 0.0425
         return {"rate": round(rate_decimal * 100, 4), "source": "^IRX", "status": "live"}
     return {"rate": 4.25, "source": "fallback", "status": "error"}
+
+
+# ---------------------------------------------------------------------------
+# Live quote endpoint  (watchlist + ad-hoc price lookups)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/quote")
+def get_quote(tickers: str):
+    """
+    Return live prices for a comma-separated list of tickers.
+    Used by the watchlist to get current prices when a ticker is added.
+
+    tickers: comma-separated, e.g. 'AAPL,MSFT,NVDA'
+    """
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if not ticker_list:
+        return {"quotes": {}}
+    try:
+        price_df = fetch_prices(ticker_list)
+        quotes = {}
+        for _, row in price_df.iterrows():
+            quotes[row["ticker"]] = {
+                "price"       : _clean(row.get("live_price")),
+                "prev_close"  : _clean(row.get("prev_close")),
+                "ret1m"       : _clean(row.get("ret1m")),
+                "ret3m"       : _clean(row.get("ret3m")),
+                "low52"       : _clean(row.get("low52")),
+                "high52"      : _clean(row.get("high52")),
+                "price_source": row.get("price_source"),
+            }
+        return {"quotes": quotes}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------------------------------
