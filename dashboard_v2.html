@@ -1534,6 +1534,29 @@ async function fetchAndApplyBenchmark(fund) {
     }
 }
 
+async function fetchAndApplyNavHistory(fund) {
+    try {
+        const res = await fetch(`/api/nav-history/${fund}`, { headers: _applyAuthHeader() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!perfChart) return;
+
+        const aligned = data.aligned || [];
+        // Need at least 2 non-null points to show a meaningful line
+        const nonNull = aligned.filter(v => v != null);
+        if (nonNull.length < 2) return;
+
+        // Index to first available point = 0%
+        const base = nonNull[0];
+        const fundPct = aligned.map(v => v != null ? +((v - base) / base * 100).toFixed(2) : null);
+
+        perfChart.data.datasets[0].data = fundPct;
+        perfChart.update('none');
+    } catch(e) {
+        console.warn('[nav-history] fetch failed:', e.message);
+    }
+}
+
 function applyLiveBench(fund, data) {
     if (fund !== currentFund) return;
     const d = FUNDS[fund];
@@ -1668,6 +1691,9 @@ async function renderDashboard() {
     } else {
         fetchAndApplyBenchmark(currentFund);
     }
+
+    // Populate fund line from uploaded NAV history (blank until ≥2 files exist)
+    fetchAndApplyNavHistory(currentFund);
 }
 
 function set(id, text, cls) {
@@ -1784,11 +1810,11 @@ function buildPerfChart(d) {
     const { grid, tick } = chartColors();
     const n = CHART_LABELS.length;
 
-    // Convert raw dollar values → cumulative % return from Mar 1 base
-    const baseFund  = d.chartFund[0];
+    // Benchmark: convert hardcoded base values → % return (overwritten by live data shortly after)
     const baseBench = d.chartBench[0];
-    const fundPct   = d.chartFund.map(v  => +((v  - baseFund)  / baseFund  * 100).toFixed(2));
-    const benchPct  = d.chartBench.map(v => +((v  - baseBench) / baseBench * 100).toFixed(2));
+    const benchPct  = d.chartBench.map(v => +((v - baseBench) / baseBench * 100).toFixed(2));
+    // Fund line: starts blank — filled in by fetchAndApplyNavHistory() once uploads exist
+    const fundPct   = new Array(CHART_LABELS.length).fill(null);
 
     perfChart = new Chart(ctx, {
         type: 'line',

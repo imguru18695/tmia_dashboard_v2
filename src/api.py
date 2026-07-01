@@ -43,7 +43,7 @@ import sys
 sys.path.insert(0, str(SRC_DIR))
 
 from data_manager import DataManager
-from ingestion import load_holdings_for_date, list_available_dates, HOLDINGS_FOLDER
+from ingestion import load_holdings_for_date, list_available_dates, HOLDINGS_FOLDER, _scan_all_files
 from prices import fetch_prices, enrich_with_prices, calculate_period_returns
 try:
     from signals import compute_signals, _get_rf_annual as _signals_get_rf
@@ -525,6 +525,64 @@ def get_bulk_signals(tickers: str):
         result[t] = compute_signals(t)
         time.sleep(0.1)
     return {"signals": result}
+
+
+# ---------------------------------------------------------------------------
+# NAV history endpoint  (fund cumulative return chart)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/nav-history/{fund}")
+def get_nav_history(fund: str):
+    """
+    Return NAV time series from all uploaded custodian files for a fund,
+    aligned to the 16 chart date slots defined in benchmark.CHART_DATES.
+
+    Each custodian file date is matched to the nearest chart date within
+    a 5-day window.  Dates with no nearby upload return null.
+
+    Response:
+        points  : [{date, nav}]  — raw data points, oldest first
+        aligned : [float|null]   — 16-element array aligned to chart_dates
+        chart_dates: [str]       — the 16 ISO date strings for the x-axis
+    """
+    from datetime import datetime, timedelta
+    try:
+        from benchmark import CHART_DATES
+    except Exception:
+        CHART_DATES = []
+
+    name_map = {"endowment": "Endowment Fund", "longhorn": "Longhorn Fund"}
+    fund_name = name_map.get(fund.lower())
+    if not fund_name:
+        raise HTTPException(status_code=404, detail=f"Unknown fund: {fund}")
+
+    all_files = _scan_all_files(HOLDINGS_FOLDER)
+    files = sorted(all_files.get(fund_name, []), key=lambda x: x[1])  # oldest first
+
+    nav_dict: dict[str, float] = {}
+    for path, dt in files:
+        try:
+            df = load_holdings_for_date(HOLDINGS_FOLDER, fund_name, dt.isoformat())
+            nav_dict[dt.isoformat()] = round(float(df["market_value"].sum()), 2)
+        except Exception as e:
+            print(f"[nav-history] skipping {path.name}: {e}")
+
+    points = [{"date": d, "nav": nav_dict[d]} for d in sorted(nav_dict)]
+
+    # Align each NAV point to the nearest chart date within ±5 days
+    WINDOW = 5
+    aligned: list[float | None] = []
+    for cd in CHART_DATES:
+        cd_dt = datetime.strptime(cd, "%Y-%m-%d").date()
+        match = None
+        for nd_str, nav in nav_dict.items():
+            nd_dt = datetime.strptime(nd_str, "%Y-%m-%d").date()
+            if abs((nd_dt - cd_dt).days) <= WINDOW:
+                match = nav
+                break
+        aligned.append(match)
+
+    return {"fund": fund_name, "points": points, "aligned": aligned, "chart_dates": CHART_DATES}
 
 
 # ---------------------------------------------------------------------------
