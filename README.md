@@ -1,6 +1,6 @@
-# UT Portfolio Dashboard
+# Student Investment Fund — Portfolio Dashboard
 
-A real-time investment portfolio dashboard built for student-managed funds at the McCombs School of Business, University of Texas at Austin. Tracks live holdings, market prices, P&L, and performance across two funds — the **Endowment Fund** and the **Longhorn Fund**.
+A real-time investment portfolio dashboard built for student-managed funds. Tracks live holdings, market prices, P&L, and performance across multiple funds.
 
 ---
 
@@ -134,4 +134,4 @@ drag custodian file → drop onto deploy/upload_holdings.bat
 
 ## Context
 
-Built as part of the **Technology and Media in Investment Analysis (TMIA)** course at McCombs School of Business, UT Austin. Designed to replace manual spreadsheet workflows for student fund managers tracking real equity portfolios.
+Built to replace manual spreadsheet workflows for student fund managers tracking real equity portfolios.

@@ -3,7 +3,7 @@
 # Usage: bash deploy/setup.sh
 set -euo pipefail
 
-REPO_DIR="/home/tmiadashboardv2/dashboard"
+REPO_DIR="/home/dashboard/app"
 SERVICE_NAME="dashboard"
 
 echo "==> Installing system packages"
@@ -28,7 +28,7 @@ echo "==> Set your credentials before starting:"
 echo "    sudo systemctl edit $SERVICE_NAME"
 echo "    Add under [Service]:"
 echo "      Environment=DASHBOARD_AUTH=true"
-echo "      Environment=DASHBOARD_USER=utfunds"
+echo "      Environment=DASHBOARD_USER=admin"
 echo "      Environment=DASHBOARD_PASS=<strong-password>"
 echo ""
 

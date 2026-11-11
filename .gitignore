@@ -1,5 +1,10 @@
 # Environment & secrets
 .env
+.claude/
+
+# Data files — never commit actual portfolio/tracker files
+*.xlsx
+*.xls
 
 # Local reference docs — not for public repo
 SYSTEM_GUIDE.md

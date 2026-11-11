@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Texas McCombs Investment Advisors — Portfolio Analytics</title>
+<title>Student Investment Fund — Portfolio Analytics</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -653,7 +653,7 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
     <div class="login-brand">
         <div class="login-brand-bar"></div>
         <div class="login-brand-text">
-            <div class="t1">Texas McCombs Investment Advisors</div>
+            <div class="t1">Student Investment Fund</div>
             <div class="t2">Portfolio Analytics &nbsp;·&nbsp; University of Texas at Austin</div>
         </div>
     </div>
@@ -674,9 +674,9 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
         </div>
     </div>
     <div id="login-disclaimer">
-        This platform is for authorized TMIA personnel only.<br>
+        This platform is for authorized personnel only.<br>
         Unauthorized access is strictly prohibited. All sessions are monitored and logged.<br>
-        By signing in, you agree to the terms of access set by Texas McCombs Investment Advisors.
+        By signing in, you agree to the terms of access set by the fund administrator.
     </div>
 </div>
 
@@ -685,7 +685,7 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
     <div class="nav-brand">
         <div class="brand-bar"></div>
         <div>
-            <div class="brand-name">Texas McCombs Investment Advisors</div>
+            <div class="brand-name">Student Investment Fund</div>
             <div class="brand-sub"><em>Portfolio Analytics</em>&nbsp;&nbsp;·&nbsp;&nbsp;University of Texas at Austin</div>
         </div>
     </div>
@@ -1198,7 +1198,7 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
 
 </div>
 
-<footer>TMIA Portfolio Dashboard &nbsp;·&nbsp; McCombs School of Business, The University of Texas at Austin &nbsp;·&nbsp; Confidential — For Authorized Users Only &nbsp;·&nbsp; © 2026</footer>
+<footer>Student Investment Fund — Portfolio Dashboard &nbsp;·&nbsp; Confidential — For Authorized Users Only &nbsp;·&nbsp; © 2026</footer>
 
 <script>
 // ── MOCK DATA ────────────────────────────────────────────────────
@@ -3607,8 +3607,8 @@ function umDeleteUser(id) {
 function logout() {
     currentUser = null;
     _authHeader = '';
-    localStorage.removeItem('tmia_session');
-    localStorage.removeItem('tmia_auth');
+    localStorage.removeItem('sif_session');
+    localStorage.removeItem('sif_auth');
     document.getElementById('profile-initials').textContent = '--';
     document.getElementById('login-username').value = '';
     document.getElementById('login-password').value = '';
@@ -3658,7 +3658,7 @@ function updateProfileNav() {
 })();
 
 // Stores the Basic Auth header for all API calls; set on successful login
-let _authHeader = localStorage.getItem('tmia_auth') || '';
+let _authHeader = localStorage.getItem('sif_auth') || '';
 
 function _applyAuthHeader(headers = {}) {
     if (_authHeader) headers['Authorization'] = _authHeader;
@@ -3683,9 +3683,9 @@ async function submitLogin() {
         });
         if (res.ok || res.status === 200) {
             _authHeader = authHeader;
-            localStorage.setItem('tmia_auth', authHeader);
+            localStorage.setItem('sif_auth', authHeader);
             currentUser = { username, role: 'admin' };
-            localStorage.setItem('tmia_session', JSON.stringify(currentUser));
+            localStorage.setItem('sif_session', JSON.stringify(currentUser));
             document.getElementById('login-screen').style.display = 'none';
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById('screen-dashboard').classList.add('active');
@@ -3721,14 +3721,14 @@ async function submitLogin() {
 // Restore session from localStorage if available
 (async function restoreSession() {
     try {
-        const saved = localStorage.getItem('tmia_session');
+        const saved = localStorage.getItem('sif_session');
         if (!saved || !_authHeader) return;
         const user = JSON.parse(saved);
         // Validate stored credentials still work against the backend
         const res = await fetch('/api/risk-free-rate', { headers: _applyAuthHeader() });
         if (!res.ok) {
-            localStorage.removeItem('tmia_session');
-            localStorage.removeItem('tmia_auth');
+            localStorage.removeItem('sif_session');
+            localStorage.removeItem('sif_auth');
             _authHeader = '';
             return;
         }
@@ -3743,8 +3743,8 @@ async function submitLogin() {
         updateProfileNav();
         renderDashboard();
     } catch(e) {
-        localStorage.removeItem('tmia_session');
-        localStorage.removeItem('tmia_auth');
+        localStorage.removeItem('sif_session');
+        localStorage.removeItem('sif_auth');
         _authHeader = '';
     }
 })();

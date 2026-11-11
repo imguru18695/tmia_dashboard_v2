@@ -58,7 +58,7 @@ except ImportError as _e:
 # ---------------------------------------------------------------------------
 
 _AUTH_ENABLED = os.environ.get("DASHBOARD_AUTH", "false").lower() == "true"
-_DASH_USER    = os.environ.get("DASHBOARD_USER", "utfunds")
+_DASH_USER    = os.environ.get("DASHBOARD_USER", "admin")
 _DASH_PASS    = os.environ.get("DASHBOARD_PASS", "changeme")
 
 _ALLOWED_UPLOAD_EXT = {".csv", ".xls", ".xlsx"}
@@ -301,7 +301,7 @@ async def upload_holdings(file: UploadFile = File(...)):
     Saves to the Custodian Holdings folder; DataManager auto-detects on next request.
 
     Usage (curl):
-        curl -u utfunds:PASSWORD -F "file=@myfile.csv" https://<host>/api/upload
+        curl -u admin:PASSWORD -F "file=@myfile.csv" https://<host>/api/upload
     """
     suffix = Path(file.filename).suffix.lower()
     if suffix not in _ALLOWED_UPLOAD_EXT:

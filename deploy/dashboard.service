@@ -1,19 +1,19 @@
 [Unit]
-Description=UT Portfolio Dashboard (FastAPI)
+Description=Portfolio Dashboard (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=tmiadashboardv2
-WorkingDirectory=/home/tmiadashboardv2/dashboard
-ExecStart=/home/tmiadashboardv2/dashboard/venv/bin/uvicorn src.api:app --host 127.0.0.1 --port 5175 --workers 2
+User=dashboard
+WorkingDirectory=/home/dashboard/app
+ExecStart=/home/dashboard/app/venv/bin/uvicorn src.api:app --host 127.0.0.1 --port 5175 --workers 2
 Restart=on-failure
 RestartSec=5
 
 # Secrets — set these before running: sudo systemctl edit dashboard
 # Environment=DASHBOARD_AUTH=true
-# Environment=DASHBOARD_USER=utfunds
+# Environment=DASHBOARD_USER=admin
 # Environment=DASHBOARD_PASS=<strong-password>
 
 [Install]

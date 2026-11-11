@@ -5,7 +5,7 @@ REM  Run this each time you receive a new custodian file.
 REM =========================================================
 
 SET SERVER=http://YOUR-VM-IP-HERE
-SET USERNAME=utfunds
+SET USERNAME=admin
 SET PASSWORD=YOUR-PASSWORD-HERE
 
 echo.
