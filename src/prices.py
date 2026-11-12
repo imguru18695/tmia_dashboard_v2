@@ -195,9 +195,12 @@ def enrich_with_prices(holdings: pd.DataFrame) -> pd.DataFrame:
     # Drop helper column
     enriched = enriched.drop(columns=["live_price"])
 
-    # Unrealized P&L — prefer file value; fill any NaN with mv - cost basis
-    computed = (enriched["market_value"] - enriched["cost_basis"]).round(2)
-    enriched["unrealized_pnl"] = enriched["unrealized_pnl"].combine_first(computed)
+    # Unrealized P&L — always recompute from live market value so it stays
+    # consistent with the updated current_price. Custodian value is stale once
+    # prices are refreshed.
+    enriched["unrealized_pnl"] = (
+        enriched["market_value"] - enriched["cost_basis"]
+    ).round(2)
 
     return enriched.reset_index(drop=True)
 

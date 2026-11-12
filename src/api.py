@@ -57,9 +57,15 @@ except ImportError as _e:
 # Auth configuration  (set DASHBOARD_USER / DASHBOARD_PASS env vars in prod)
 # ---------------------------------------------------------------------------
 
-_AUTH_ENABLED = os.environ.get("DASHBOARD_AUTH", "false").lower() == "true"
+_AUTH_ENABLED = os.environ.get("DASHBOARD_AUTH", "true").lower() == "true"
 _DASH_USER    = os.environ.get("DASHBOARD_USER", "admin")
 _DASH_PASS    = os.environ.get("DASHBOARD_PASS", "changeme")
+
+if _AUTH_ENABLED and _DASH_PASS == "changeme":
+    raise RuntimeError(
+        "DASHBOARD_PASS is still the default 'changeme'. "
+        "Set a strong password via the DASHBOARD_PASS environment variable before starting."
+    )
 
 _ALLOWED_UPLOAD_EXT = {".csv", ".xls", ".xlsx"}
 
