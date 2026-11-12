@@ -116,7 +116,7 @@ def fetch_prices(tickers: list[str]) -> pd.DataFrame:
                 "live_price"  : round(live_price, 4),
                 "prev_close"  : round(prev_close, 4),
                 "price_time"  : price_time,
-                "price_source": "live",
+                "price_source": "latest_available",
                 "ret1m"       : ret1m,
                 "ret3m"       : ret3m,
                 "low52"       : round(float(close_series.min()), 4),

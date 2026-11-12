@@ -732,7 +732,7 @@ footer { text-align: center; padding: 20px 32px; color: var(--muted); font-size:
             <span class="kpi-delta pos" id="k-mtd">▲ 2.3% Mar'26 TD</span>
         </div>
         <div class="kpi-card">
-            <div class="kpi-label">Daily P&L</div>
+            <div class="kpi-label">Price Movement (1D)</div>
             <div class="kpi-value pos" id="k-daily">+$23,450</div>
             <span class="kpi-delta pos" id="k-daily-pct">▲ 0.15% today</span>
         </div>
@@ -2278,7 +2278,7 @@ function renderHoldings_header(isLH) {
     const numAnTh = `<th class="${[numAnSorted?'sorted':'','mom-col'].filter(Boolean).join(' ')}" onclick="sortBy('numAnalysts')"><div class="th-tip-wrap"># Analysts<span class="sort-icon${numAnSorted?' active':''}">${numAnArrow}</span><div class="th-tip tip-end"><div class="th-tip-title">Analyst Coverage</div><hr class="th-tip-sep"><div class="th-tip-detail">Number of analysts with active coverage<br>More analysts → greater consensus reliability</div></div></div></th>`;
 
     const hRow = `${th('#','',false)}${th('Ticker','ticker',true)}${th('Name','name',true)}${th('Sector','sector',true)}${isLH?th('Class','cls',true):''}${th('Quantity','qty',true)}${th('Price','price',true)}${th('Mkt Value','mv',true)}${th('Cost Basis','cost',true)}${th('Unrlzd P&L','upnl',true)}${th('P&L %','upnlPct',true)}${th('Weight %','weight',true)}`
-        + th('1D Ret','ret1d',true,'ret-col ret-col-first') + th('1M Ret','ret1m',true,'ret-col') + th('3M Ret','ret3m',true,'ret-col') + `<th class="ret-col" style="text-align:left;cursor:default">52W Range</th>`
+        + th('Price Mvmt','ret1d',true,'ret-col ret-col-first') + th('1M Ret','ret1m',true,'ret-col') + th('3M Ret','ret3m',true,'ret-col') + `<th class="ret-col" style="text-align:left;cursor:default">52W Range</th>`
         + th('Next Earnings','nextEarnings',true,'evt-col evt-col-first') + th('Ex-Div','exDiv',true,'evt-col') + th('Div Yield','divYield',true,'evt-col')
         + betaTh + volTh + sharpeTh + corrTh
         + ma50Th + ma200Th + h52wTh + recTh + numAnTh;

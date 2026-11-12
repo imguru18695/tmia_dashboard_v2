@@ -314,8 +314,11 @@ async def upload_holdings(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"File type '{suffix}' not allowed. Use CSV or XLS/XLSX.")
 
     dest = HOLDINGS_FOLDER / Path(file.filename).name   # .name strips any path components
+    _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
     try:
-        contents = await file.read()   # async read keeps the event loop free
+        contents = await file.read()
+        if len(contents) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File exceeds 25 MB limit.")
         dest.write_bytes(contents)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}")
@@ -348,6 +351,7 @@ async def upload_holdings_b64(req: UploadB64Request):
     if suffix not in _ALLOWED_UPLOAD_EXT:
         raise HTTPException(status_code=400, detail=f"File type '{suffix}' not allowed.")
 
+    _MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
     try:
         # Strip all whitespace (MIME encoders add \r\n every 76 chars),
         # then normalise URL-safe alphabet before validating.
@@ -355,6 +359,9 @@ async def upload_holdings_b64(req: UploadB64Request):
         file_bytes = base64.b64decode(normalized, validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 content.")
+
+    if len(file_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 25 MB limit.")
 
     dest = HOLDINGS_FOLDER / Path(req.filename).name   # .name strips any path components
     try:
